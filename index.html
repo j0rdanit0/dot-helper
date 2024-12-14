@@ -1,0 +1,320 @@
+<html>
+<head>
+    <style type="text/css">
+        .circle {
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+        }
+    </style>
+    <script type="text/javascript">
+        const PREFER_LOWER_MOVES = true;
+        const BLANK_DOT_COLOR = '#00000000';
+
+        window.onload = function(e) {
+            const fileInput = document.getElementById("screenshotFile");
+
+            fileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+
+                if (file) {
+                    const reader = new FileReader();
+
+                    reader.onload = (e) => {
+                        const img = new Image();
+
+                        img.onload = () => {
+                            const dotMap = generateDotMap( img );
+
+                            const potentialMoves = [];
+                            for (let rowIndex = 0; rowIndex < dotMap.length; rowIndex++) {
+                                const row = dotMap[rowIndex];
+                                for (let colIndex = 0; colIndex < row.length; colIndex++) {
+                                    const startCoordinates = {
+                                        x: colIndex,
+                                        y: rowIndex
+                                    };
+
+                                    [
+                                        swapDots( dotMap, startCoordinates, true ),
+                                        swapDots( dotMap, startCoordinates, false )
+                                    ].filter( potentialMove => potentialMove.score > 0 ).forEach( potentialMove => {
+                                        potentialMoves.push( potentialMove );
+                                    });
+                                }
+                            }
+
+                            potentialMoves.sort( (a, b) => {
+                                let score = b.score - a.score;
+                                if ( PREFER_LOWER_MOVES && score === 0 ) {
+                                    const aAverageY = a.matchCoordinates.reduce( (sum, coordinates) => sum + coordinates.y, 0 ) / a.matchCoordinates.length;
+                                    const bAverageY = b.matchCoordinates.reduce( (sum, coordinates) => sum + coordinates.y, 0 ) / b.matchCoordinates.length;
+
+                                    score = bAverageY - aAverageY;
+                                }
+
+                                return score;
+                            } );
+
+                            console.log( 'Potential moves:' );
+                            potentialMoves.forEach( potentialMove => console.log( `${potentialMove.score}: (${potentialMove.coordinates1.x},${potentialMove.coordinates1.y})<->(${potentialMove.coordinates2.x},${potentialMove.coordinates2.y})` ) );
+                        }
+
+                        img.src = e.target.result;
+                        document.body.appendChild(img);
+                    };
+
+                    reader.readAsDataURL(file);
+                }
+            });
+        };
+
+        function swapDots( dotMap, startCoordinates, moveHorizontally ) {
+            const potentialMove = {
+                coordinates1: startCoordinates,
+                coordinates2: null,
+                score: 0,
+                matchCoordinates: []
+            };
+
+            if ( (moveHorizontally ? startCoordinates.x + 1 < dotMap[startCoordinates.y].length : startCoordinates.y + 1 < dotMap.length) ) {
+                const currentColor = dotMap[startCoordinates.y][startCoordinates.x];
+
+                const swapCoordinates = {
+                    x: (moveHorizontally ? startCoordinates.x + 1 : startCoordinates.x),
+                    y: (moveHorizontally ? startCoordinates.y : startCoordinates.y + 1)
+                }
+                potentialMove.coordinates2 = swapCoordinates;
+
+                const swapColor = dotMap[swapCoordinates.y][swapCoordinates.x];
+
+                if ( currentColor !== swapColor ) {
+                    // hypothetically make the swap
+                    const potentialDotMap = dotMap.map( row => row.slice() );
+                    potentialDotMap[startCoordinates.y][startCoordinates.x] = swapColor;
+                    potentialDotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
+
+                    // track coordinates of every dot that gets shifted by swaps
+                    const shiftedCoordinates = [ startCoordinates, swapCoordinates ];
+
+                    while ( shiftedCoordinates.length > 0 ) {
+                        // track coordinates of every dot in the match
+                        const matchCoordinates = new Set();
+
+                        shiftedCoordinates.forEach( coordinates => {
+                            checkForMatch( potentialDotMap, coordinates, false, matchCoordinates );
+                            checkForMatch( potentialDotMap, coordinates, true, matchCoordinates );
+                        });
+
+                        shiftedCoordinates.length = 0;
+
+                        if ( matchCoordinates.size > 0 ) {
+                            potentialMove.score += matchCoordinates.size;
+                            const normalizedCoordinates = [];
+                            matchCoordinates.forEach( coordinates => {
+                                const parts = coordinates.split(',');
+                                const coord = {
+                                    x: parseInt(parts[0]),
+                                    y: parseInt(parts[1])
+                                };
+
+                                normalizedCoordinates.push( coord );
+                                potentialMove.matchCoordinates.push( coord );
+                            });
+
+                            // create blanks
+                            normalizedCoordinates.forEach( coordinates => {
+                                potentialDotMap[coordinates.y][coordinates.x] = BLANK_DOT_COLOR;
+                            });
+
+                            // bubble up the blanks - start from the top of the blanks and make them bubble to the top
+                            normalizedCoordinates.sort( (a, b) => a.y - b.y );
+                            normalizedCoordinates.forEach( coordinates => {
+                                let x = coordinates.x;
+                                let y = coordinates.y;
+
+                                while( y > 0 ) {
+                                    const currentCoordinates = {
+                                        x: x,
+                                        y: y
+                                    };
+
+                                    const swapCoordinates = {
+                                        x: x,
+                                        y: y - 1
+                                    }
+
+                                    const currentColor = potentialDotMap[currentCoordinates.y][currentCoordinates.x];
+                                    const swapColor = potentialDotMap[swapCoordinates.y][swapCoordinates.x];
+
+                                    if ( currentColor === BLANK_DOT_COLOR && swapColor !== BLANK_DOT_COLOR ) {
+                                        potentialDotMap[currentCoordinates.y][currentCoordinates.x] = swapColor;
+                                        potentialDotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
+
+                                        shiftedCoordinates.push( currentCoordinates );
+                                    }
+
+                                    y--;
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+
+            return potentialMove;
+        }
+
+        function checkForMatch( potentialDotMap, dotCoordinates, checkHorizontally, finalMatchCoordinates ) {
+            const matchCoordinates = new Set();
+
+            let x = dotCoordinates.x;
+            let y = dotCoordinates.y;
+
+            const colorHex = potentialDotMap[y][x];
+            if ( colorHex !== BLANK_DOT_COLOR ) {
+                // check backwards from the dot
+                let differentColorFound = false;
+                matchCoordinates.add(`${x},${y}`);
+                while ((checkHorizontally ? x : y) - 1 >= 0 && !differentColorFound) {
+                    checkHorizontally ? x-- : y--;
+                    if (potentialDotMap[y][x] !== colorHex) {
+                        differentColorFound = true;
+                    } else {
+                        matchCoordinates.add(`${x},${y}`);
+                    }
+                }
+
+                x = dotCoordinates.x;
+                y = dotCoordinates.y;
+
+                // check forwards from the dot
+                differentColorFound = false;
+                matchCoordinates.add(`${x},${y}`);
+                while ((checkHorizontally ? x : y) + 1 < (checkHorizontally ? potentialDotMap[y].length : potentialDotMap.length) && !differentColorFound) {
+                    checkHorizontally ? x++ : y++;
+                    if (potentialDotMap[y][x] !== colorHex) {
+                        differentColorFound = true;
+                    } else {
+                        matchCoordinates.add(`${x},${y}`);
+                    }
+                }
+
+                // the coordinates of any dots involved in a match should be added to the final match coordinates list
+                if (matchCoordinates.size >= 3) {
+                    matchCoordinates.forEach(coordinates => finalMatchCoordinates.add(coordinates));
+                }
+            }
+        }
+
+        function generateDotMap( img ) {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            ctx.drawImage(img, 0, 0);
+
+            // find the top-left dot
+            let originX = 0;
+            let originY = 0;
+            while( isBackgroundPixel(ctx, originX, originY) ) {
+                originX += 3;
+                originY += 3;
+
+                if ( originX >= canvas.width || originY >= canvas.height ) throwError( "Couldn't find any dots" );
+            }
+
+            // go right to count the columns
+            const columnCount = countDots( originX, originY, canvas.width, true, ctx );
+            if ( columnCount <= 3 ) throwError( "There must be more than 3 dot columns" );
+            document.getElementById("columnCount").textContent = `${columnCount}`;
+
+            // go down to count the rows
+            const rowCount = countDots( originY, originX, canvas.height, false, ctx );
+            if ( rowCount <= 3 ) throwError( "There must be more than 3 dot rows" );
+            document.getElementById("rowCount").textContent = `${rowCount}`;
+
+            // divide the screenshot into a grid and capture each dot's color to create all the dot maps
+            const cellWidth = canvas.width / columnCount;
+            const cellHeight = canvas.height / rowCount;
+
+            const dotMap = [];
+            for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+                for (let columnIndex = 0; columnIndex < columnCount; columnIndex++) {
+                    const x = Math.floor( (cellWidth * columnIndex) + (cellWidth / 2) );
+                    const y = Math.floor( (cellHeight * rowIndex) + (cellHeight / 2) );
+
+                    if ( isBackgroundPixel(ctx, x, y) ) throwError( `Expected to find a dot at (x=${x},y=${y})` );
+                    const colorHex = getPixelColorHex(ctx, x, y);
+                    dotMap[rowIndex] = dotMap[rowIndex] || [];
+                    dotMap[rowIndex].push(colorHex);
+                }
+            }
+
+            // for debugging
+            console.log( `\nMap:` );
+            for (let rowIndex = 0; rowIndex < dotMap.length; rowIndex++) {
+                console.log( dotMap[rowIndex] );
+            }
+
+            return dotMap;
+        }
+
+        function getPixelColorHex(ctx, x, y) {
+            const imageData = ctx.getImageData(x, y, 1, 1);
+            const data = imageData.data;
+
+            const r = data[0];
+            const g = data[1];
+            const b = data[2];
+
+            const colorHex = `#${rgbToHex(r, g, b)}`;
+            console.log( `Pixel at (x=${x},y=${y}) is ${colorHex}` );
+            return colorHex;
+        }
+
+        function isBackgroundPixel(ctx, x, y) {
+            return getPixelColorHex(ctx, x, y).toLowerCase() === '#f8bd5d';
+        }
+
+        function rgbToHex(r, g, b) {
+            return (
+                ((1 << 24) + (r << 16) + (g << 8) + b)
+                    .toString(16)
+                    .slice(1)
+            );
+        }
+
+        function countDots( startIndex, oppositeIndex, dimensionMax, moveHorizontally, ctx ) {
+            let dotCount = 0;
+            let dotFound = false;
+            for (let i = startIndex; i < dimensionMax; i += 2) {
+                if ( isBackgroundPixel( ctx, moveHorizontally ? i : oppositeIndex, moveHorizontally ? oppositeIndex : i ) ) {
+                    dotFound = false;
+                }
+                else if ( !dotFound ) {
+                    dotFound = true;
+                    dotCount++;
+                }
+            }
+
+            return dotCount;
+        }
+
+        function throwError( message ) {
+            document.getElementById("message").textContent = `Screenshot is invalid: ${message}`;
+            throw new Error( message );
+        }
+    </script>
+</head>
+<body>
+    <input type="file" id="screenshotFile">
+    <hr/>
+    Cols: <strong id="columnCount">0</strong>
+    <br/>
+    Rows: <strong id="rowCount">0</strong>
+    <br/>
+    <em><strong id="message"></strong></em>
+    <hr/>
+</body>
+</html>
