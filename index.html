@@ -3,7 +3,7 @@
     <title>Dot Helper</title>
     <style>
         :root {
-            --selection-color: green;
+            --selection-color: red;
         }
         .circle {
             width: 30px;
@@ -41,6 +41,8 @@
         const PREFER_LOWER_MOVES = true;
         const BACKGROUND_COLOR = '#f8bd5d'
         const BLANK_DOT_COLOR = '#00000000';
+
+        let backgroundColorHex;
 
         window.onload = function(e) {
             const fileInput = document.getElementById("screenshotFile");
@@ -290,10 +292,12 @@
             const ctx = canvas.getContext("2d", { willReadFrequently: true });
             ctx.drawImage(img, 0, 0);
 
+            backgroundColorHex = getPixelColorHex( ctx, 0, 0 );
+
             // find the top-left dot
             let originX = 0;
             let originY = 0;
-            while( isBackgroundPixel(ctx, originX, originY) ) {
+            while( getPixelColorHex(ctx, originX, originY) === backgroundColorHex ) {
                 originX += 3;
                 originY += 3;
 
@@ -320,7 +324,7 @@
                     const x = Math.floor( (cellWidth * columnIndex) + (cellWidth / 2) );
                     const y = Math.floor( (cellHeight * rowIndex) + (cellHeight / 2) );
 
-                    if ( isBackgroundPixel(ctx, x, y) ) throwError( `Expected to find a dot at (x=${x},y=${y})` );
+                    if ( getPixelColorHex(ctx, x, y) === backgroundColorHex ) throwError( `Expected to find a dot at (x=${x},y=${y})` );
                     const colorHex = getPixelColorHex(ctx, x, y);
                     dotMap[rowIndex] = dotMap[rowIndex] || [];
                     dotMap[rowIndex].push(colorHex);
@@ -350,10 +354,6 @@
             return colorHex;
         }
 
-        function isBackgroundPixel(ctx, x, y) {
-            return getPixelColorHex(ctx, x, y).toLowerCase() === BACKGROUND_COLOR;
-        }
-
         function rgbToHex(r, g, b) {
             return (
                 ((1 << 24) + (r << 16) + (g << 8) + b)
@@ -366,7 +366,7 @@
             let dotCount = 0;
             let dotFound = false;
             for (let i = startIndex; i < dimensionMax; i += 2) {
-                if ( isBackgroundPixel( ctx, moveHorizontally ? i : oppositeIndex, moveHorizontally ? oppositeIndex : i ) ) {
+                if ( getPixelColorHex( ctx, moveHorizontally ? i : oppositeIndex, moveHorizontally ? oppositeIndex : i ) === backgroundColorHex ) {
                     dotFound = false;
                 }
                 else if ( !dotFound ) {
