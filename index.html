@@ -1,14 +1,45 @@
-<html>
+<html lang="en">
 <head>
-    <style type="text/css">
+    <title>Dot Helper</title>
+    <style>
+        :root {
+            --selection-color: green;
+        }
         .circle {
-            width: 10px;
-            height: 10px;
-            border-radius: 5px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            margin: 5px auto;
+            box-shadow: inset -1px 0 1px #888888, inset 1px 1px 2px #ffffff88;
+        }
+        .selected-north {
+            border-left: 2px solid var(--selection-color);
+            border-top: 2px solid var(--selection-color);
+            border-right: 2px solid var(--selection-color);
+            border-radius: 50% 50% 0 0;
+        }
+        .selected-east {
+            border-top: 2px solid var(--selection-color);
+            border-right: 2px solid var(--selection-color);
+            border-bottom: 2px solid var(--selection-color);
+            border-radius: 0 50% 50% 0;
+        }
+        .selected-south {
+            border-left: 2px solid var(--selection-color);
+            border-bottom: 2px solid var(--selection-color);
+            border-right: 2px solid var(--selection-color);
+            border-radius: 0 0 50% 50%;
+        }
+        .selected-west {
+            border-top: 2px solid var(--selection-color);
+            border-left: 2px solid var(--selection-color);
+            border-bottom: 2px solid var(--selection-color);
+            border-radius: 50% 0 0 50%;
         }
     </style>
     <script type="text/javascript">
         const PREFER_LOWER_MOVES = true;
+        const BACKGROUND_COLOR = '#f8bd5d'
         const BLANK_DOT_COLOR = '#00000000';
 
         window.onload = function(e) {
@@ -57,11 +88,24 @@
                             } );
 
                             console.log( 'Potential moves:' );
-                            potentialMoves.forEach( potentialMove => console.log( `${potentialMove.score}: (${potentialMove.coordinates1.x},${potentialMove.coordinates1.y})<->(${potentialMove.coordinates2.x},${potentialMove.coordinates2.y})` ) );
+                            potentialMoves.forEach( potentialMove => {
+                                const table = document.createElement('table');
+                                const tr = table.insertRow();
+                                const tdBefore = tr.insertCell();
+                                const mapTableBefore = drawMap( dotMap, `before_(${potentialMove.coordinates1.x},${potentialMove.coordinates1.y})<->(${potentialMove.coordinates2.x},${potentialMove.coordinates2.y})`, potentialMove.coordinates1, potentialMove.coordinates2, potentialMove.moveHorizontally );
+                                tdBefore.appendChild( mapTableBefore );
+                                const tdAfter = tr.insertCell();
+                                const mapTableAfter = drawMap( potentialMove.dotMap, `after_(${potentialMove.coordinates1.x},${potentialMove.coordinates1.y})<->(${potentialMove.coordinates2.x},${potentialMove.coordinates2.y})` );
+                                tdAfter.appendChild( mapTableAfter );
+                                document.body.appendChild( document.createTextNode( `Score: ${potentialMove.score}` ) )
+                                document.body.appendChild( table );
+                                document.body.appendChild( document.createElement('hr') );
+
+                                // console.log( `${potentialMove.score}: (${potentialMove.coordinates1.x},${potentialMove.coordinates1.y})<->(${potentialMove.coordinates2.x},${potentialMove.coordinates2.y})` )
+                            } );
                         }
 
                         img.src = e.target.result;
-                        document.body.appendChild(img);
                     };
 
                     reader.readAsDataURL(file);
@@ -69,12 +113,44 @@
             });
         };
 
+        function drawMap( dotMap, tableId, selectedCoordinates1, selectedCoordinates2, horizontalSelection ) {
+            const table = document.createElement('table');
+            table.id = tableId;
+            table.rules = 'none';
+            table.style.width = '250px';
+            table.style.border = '1px solid black';
+            table.style.backgroundColor = BACKGROUND_COLOR;
+
+            for (let rowIndex = 0; rowIndex < dotMap.length; rowIndex++) {
+                const tr = table.insertRow();
+                for (let colIndex = 0; colIndex < dotMap[rowIndex].length; colIndex++) {
+                    const td = tr.insertCell();
+                    const dot = document.createElement('div');
+                    dot.classList.add( 'circle' );
+                    dot.style.backgroundColor = dotMap[rowIndex][colIndex];
+
+                    if ( selectedCoordinates1 && selectedCoordinates1.x === colIndex && selectedCoordinates1.y === rowIndex ) {
+                        td.classList.add( horizontalSelection ? 'selected-west' : 'selected-north' );
+                    }
+                    else if ( selectedCoordinates2 && selectedCoordinates2.x === colIndex && selectedCoordinates2.y === rowIndex ) {
+                        td.classList.add( horizontalSelection ? 'selected-east' : 'selected-south' );
+                    }
+
+                    td.appendChild( dot );
+                }
+            }
+
+            return table;
+        }
+
         function swapDots( dotMap, startCoordinates, moveHorizontally ) {
             const potentialMove = {
                 coordinates1: startCoordinates,
                 coordinates2: null,
+                moveHorizontally: moveHorizontally,
                 score: 0,
-                matchCoordinates: []
+                matchCoordinates: [],
+                dotMap: []
             };
 
             if ( (moveHorizontally ? startCoordinates.x + 1 < dotMap[startCoordinates.y].length : startCoordinates.y + 1 < dotMap.length) ) {
@@ -90,9 +166,9 @@
 
                 if ( currentColor !== swapColor ) {
                     // hypothetically make the swap
-                    const potentialDotMap = dotMap.map( row => row.slice() );
-                    potentialDotMap[startCoordinates.y][startCoordinates.x] = swapColor;
-                    potentialDotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
+                    potentialMove.dotMap = dotMap.map( row => row.slice() );
+                    potentialMove.dotMap[startCoordinates.y][startCoordinates.x] = swapColor;
+                    potentialMove.dotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
 
                     // track coordinates of every dot that gets shifted by swaps
                     const shiftedCoordinates = [ startCoordinates, swapCoordinates ];
@@ -102,8 +178,8 @@
                         const matchCoordinates = new Set();
 
                         shiftedCoordinates.forEach( coordinates => {
-                            checkForMatch( potentialDotMap, coordinates, false, matchCoordinates );
-                            checkForMatch( potentialDotMap, coordinates, true, matchCoordinates );
+                            checkForMatch( potentialMove.dotMap, coordinates, false, matchCoordinates );
+                            checkForMatch( potentialMove.dotMap, coordinates, true, matchCoordinates );
                         });
 
                         shiftedCoordinates.length = 0;
@@ -124,7 +200,7 @@
 
                             // create blanks
                             normalizedCoordinates.forEach( coordinates => {
-                                potentialDotMap[coordinates.y][coordinates.x] = BLANK_DOT_COLOR;
+                                potentialMove.dotMap[coordinates.y][coordinates.x] = BLANK_DOT_COLOR;
                             });
 
                             // bubble up the blanks - start from the top of the blanks and make them bubble to the top
@@ -144,12 +220,12 @@
                                         y: y - 1
                                     }
 
-                                    const currentColor = potentialDotMap[currentCoordinates.y][currentCoordinates.x];
-                                    const swapColor = potentialDotMap[swapCoordinates.y][swapCoordinates.x];
+                                    const currentColor = potentialMove.dotMap[currentCoordinates.y][currentCoordinates.x];
+                                    const swapColor = potentialMove.dotMap[swapCoordinates.y][swapCoordinates.x];
 
                                     if ( currentColor === BLANK_DOT_COLOR && swapColor !== BLANK_DOT_COLOR ) {
-                                        potentialDotMap[currentCoordinates.y][currentCoordinates.x] = swapColor;
-                                        potentialDotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
+                                        potentialMove.dotMap[currentCoordinates.y][currentCoordinates.x] = swapColor;
+                                        potentialMove.dotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
 
                                         shiftedCoordinates.push( currentCoordinates );
                                     }
@@ -252,10 +328,10 @@
             }
 
             // for debugging
-            console.log( `\nMap:` );
-            for (let rowIndex = 0; rowIndex < dotMap.length; rowIndex++) {
-                console.log( dotMap[rowIndex] );
-            }
+            // console.log( `\nMap:` );
+            // for (let rowIndex = 0; rowIndex < dotMap.length; rowIndex++) {
+            //     console.log( dotMap[rowIndex] );
+            // }
 
             return dotMap;
         }
@@ -269,12 +345,13 @@
             const b = data[2];
 
             const colorHex = `#${rgbToHex(r, g, b)}`;
-            console.log( `Pixel at (x=${x},y=${y}) is ${colorHex}` );
+            // for debugging
+            // console.log( `Pixel at (x=${x},y=${y}) is ${colorHex}` );
             return colorHex;
         }
 
         function isBackgroundPixel(ctx, x, y) {
-            return getPixelColorHex(ctx, x, y).toLowerCase() === '#f8bd5d';
+            return getPixelColorHex(ctx, x, y).toLowerCase() === BACKGROUND_COLOR;
         }
 
         function rgbToHex(r, g, b) {
