@@ -2,9 +2,6 @@
 <head>
     <title>Dot Helper</title>
     <style>
-        :root {
-            --selection-color: red;
-        }
         .circle {
             width: 30px;
             height: 30px;
@@ -12,29 +9,23 @@
             margin: 5px auto;
             box-shadow: inset -1px 0 1px #888888, inset 1px 1px 2px #ffffff88;
         }
+        .highlighted {
+            background-color: rgba(255, 255, 255, 0.65);
+        }
+        .selected {
+            border: 3px solid red;
+        }
         .selected-north {
-            border-left: 2px solid var(--selection-color);
-            border-top: 2px solid var(--selection-color);
-            border-right: 2px solid var(--selection-color);
-            border-radius: 50% 50% 0 0;
+            border-bottom: none;
         }
         .selected-east {
-            border-top: 2px solid var(--selection-color);
-            border-right: 2px solid var(--selection-color);
-            border-bottom: 2px solid var(--selection-color);
-            border-radius: 0 50% 50% 0;
+            border-left: none;
         }
         .selected-south {
-            border-left: 2px solid var(--selection-color);
-            border-bottom: 2px solid var(--selection-color);
-            border-right: 2px solid var(--selection-color);
-            border-radius: 0 0 50% 50%;
+            border-top: none;
         }
         .selected-west {
-            border-top: 2px solid var(--selection-color);
-            border-left: 2px solid var(--selection-color);
-            border-bottom: 2px solid var(--selection-color);
-            border-radius: 50% 0 0 50%;
+            border-right: none;
         }
     </style>
     <script type="text/javascript">
@@ -89,19 +80,28 @@
                                 return score;
                             } );
 
-                            console.log( 'Potential moves:' );
                             potentialMoves.forEach( potentialMove => {
                                 const table = document.createElement('table');
                                 const tr = table.insertRow();
                                 const tdBefore = tr.insertCell();
-                                const mapTableBefore = drawMap( dotMap, `before_(${potentialMove.coordinates1.x},${potentialMove.coordinates1.y})<->(${potentialMove.coordinates2.x},${potentialMove.coordinates2.y})`, potentialMove.coordinates1, potentialMove.coordinates2, potentialMove.moveHorizontally );
+                                const mapTableBefore = drawMap( dotMap, [potentialMove.coordinates1, potentialMove.coordinates2], null, potentialMove.moveHorizontally );
                                 tdBefore.appendChild( mapTableBefore );
-                                const tdAfter = tr.insertCell();
-                                const mapTableAfter = drawMap( potentialMove.dotMap, `after_(${potentialMove.coordinates1.x},${potentialMove.coordinates1.y})<->(${potentialMove.coordinates2.x},${potentialMove.coordinates2.y})` );
-                                tdAfter.appendChild( mapTableAfter );
+
+                                potentialMove.dotMaps.forEach( dotMapWithHighlights => {
+                                    const tdArrow = tr.insertCell();
+                                    tdArrow.style.verticalAlign = 'middle';
+                                    tdArrow.style.padding = '20px';
+                                    const arrow = document.createElement( 'h1' );
+                                    arrow.innerHTML = '&rarr;';
+                                    tdArrow.appendChild( arrow );
+                                    const tdAfter = tr.insertCell();
+                                    const mapTableAfter = drawMap( dotMapWithHighlights.dotMap, null, dotMapWithHighlights.matchCoordinates );
+                                    tdAfter.appendChild( mapTableAfter );
+                                });
+
+                                document.body.appendChild( document.createElement('hr') );
                                 document.body.appendChild( document.createTextNode( `Score: ${potentialMove.score}` ) )
                                 document.body.appendChild( table );
-                                document.body.appendChild( document.createElement('hr') );
 
                                 // console.log( `${potentialMove.score}: (${potentialMove.coordinates1.x},${potentialMove.coordinates1.y})<->(${potentialMove.coordinates2.x},${potentialMove.coordinates2.y})` )
                             } );
@@ -115,9 +115,8 @@
             });
         };
 
-        function drawMap( dotMap, tableId, selectedCoordinates1, selectedCoordinates2, horizontalSelection ) {
+        function drawMap( dotMap, selectedCoordinates, highlightedCoordinates, horizontalSelection ) {
             const table = document.createElement('table');
-            table.id = tableId;
             table.rules = 'none';
             table.style.width = '250px';
             table.style.border = '1px solid black';
@@ -131,11 +130,21 @@
                     dot.classList.add( 'circle' );
                     dot.style.backgroundColor = dotMap[rowIndex][colIndex];
 
-                    if ( selectedCoordinates1 && selectedCoordinates1.x === colIndex && selectedCoordinates1.y === rowIndex ) {
+                    if ( selectedCoordinates && selectedCoordinates.length === 2 && selectedCoordinates[0].x === colIndex && selectedCoordinates[0].y === rowIndex ) {
+                        td.classList.add( 'selected' );
                         td.classList.add( horizontalSelection ? 'selected-west' : 'selected-north' );
                     }
-                    else if ( selectedCoordinates2 && selectedCoordinates2.x === colIndex && selectedCoordinates2.y === rowIndex ) {
+                    else if ( selectedCoordinates && selectedCoordinates.length === 2 && selectedCoordinates[1].x === colIndex && selectedCoordinates[1].y === rowIndex ) {
+                        td.classList.add( 'selected' );
                         td.classList.add( horizontalSelection ? 'selected-east' : 'selected-south' );
+                    }
+
+                    if ( highlightedCoordinates && highlightedCoordinates.length ) {
+                        highlightedCoordinates.forEach( coord => {
+                            if ( coord.x === colIndex && coord.y === rowIndex ) {
+                                td.classList.add( 'highlighted' );
+                            }
+                        });
                     }
 
                     td.appendChild( dot );
@@ -149,10 +158,10 @@
             const potentialMove = {
                 coordinates1: startCoordinates,
                 coordinates2: null,
-                moveHorizontally: moveHorizontally,
                 score: 0,
+                moveHorizontally: moveHorizontally,
                 matchCoordinates: [],
-                dotMap: []
+                dotMaps: []
             };
 
             if ( (moveHorizontally ? startCoordinates.x + 1 < dotMap[startCoordinates.y].length : startCoordinates.y + 1 < dotMap.length) ) {
@@ -168,9 +177,13 @@
 
                 if ( currentColor !== swapColor ) {
                     // hypothetically make the swap
-                    potentialMove.dotMap = dotMap.map( row => row.slice() );
-                    potentialMove.dotMap[startCoordinates.y][startCoordinates.x] = swapColor;
-                    potentialMove.dotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
+                    let potentialDotMap = dotMap.map( row => row.slice() );
+                    potentialDotMap[startCoordinates.y][startCoordinates.x] = swapColor;
+                    potentialDotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
+                    // potentialMove.dotMaps.push( {
+                    //     dotMap: potentialDotMap.map( row => row.slice() ),
+                    //     matchCoordinates: []
+                    // } );
 
                     // track coordinates of every dot that gets shifted by swaps
                     const shiftedCoordinates = [ startCoordinates, swapCoordinates ];
@@ -180,14 +193,18 @@
                         const matchCoordinates = new Set();
 
                         shiftedCoordinates.forEach( coordinates => {
-                            checkForMatch( potentialMove.dotMap, coordinates, false, matchCoordinates );
-                            checkForMatch( potentialMove.dotMap, coordinates, true, matchCoordinates );
+                            checkForMatch( potentialDotMap, coordinates, false, matchCoordinates );
+                            checkForMatch( potentialDotMap, coordinates, true, matchCoordinates );
                         });
 
                         shiftedCoordinates.length = 0;
 
                         if ( matchCoordinates.size > 0 ) {
                             potentialMove.score += matchCoordinates.size;
+                            const mapWithHighlights = {
+                                dotMap: [],
+                                matchCoordinates: []
+                            };
                             const normalizedCoordinates = [];
                             matchCoordinates.forEach( coordinates => {
                                 const parts = coordinates.split(',');
@@ -197,12 +214,15 @@
                                 };
 
                                 normalizedCoordinates.push( coord );
-                                potentialMove.matchCoordinates.push( coord );
+                                mapWithHighlights.matchCoordinates.push( coord );
                             });
+
+                            mapWithHighlights.dotMap = potentialDotMap.map( row => row.slice() );
+                            potentialMove.dotMaps.push( mapWithHighlights );
 
                             // create blanks
                             normalizedCoordinates.forEach( coordinates => {
-                                potentialMove.dotMap[coordinates.y][coordinates.x] = BLANK_DOT_COLOR;
+                                potentialDotMap[coordinates.y][coordinates.x] = BLANK_DOT_COLOR;
                             });
 
                             // bubble up the blanks - start from the top of the blanks and make them bubble to the top
@@ -222,12 +242,12 @@
                                         y: y - 1
                                     }
 
-                                    const currentColor = potentialMove.dotMap[currentCoordinates.y][currentCoordinates.x];
-                                    const swapColor = potentialMove.dotMap[swapCoordinates.y][swapCoordinates.x];
+                                    const currentColor = potentialDotMap[currentCoordinates.y][currentCoordinates.x];
+                                    const swapColor = potentialDotMap[swapCoordinates.y][swapCoordinates.x];
 
                                     if ( currentColor === BLANK_DOT_COLOR && swapColor !== BLANK_DOT_COLOR ) {
-                                        potentialMove.dotMap[currentCoordinates.y][currentCoordinates.x] = swapColor;
-                                        potentialMove.dotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
+                                        potentialDotMap[currentCoordinates.y][currentCoordinates.x] = swapColor;
+                                        potentialDotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
 
                                         shiftedCoordinates.push( currentCoordinates );
                                     }
@@ -237,6 +257,11 @@
                             });
                         }
                     }
+
+                    potentialMove.dotMaps.push( {
+                        dotMap: potentialDotMap.map( row => row.slice() ),
+                        matchCoordinates: []
+                    } );
                 }
             }
 
@@ -292,40 +317,55 @@
             const ctx = canvas.getContext("2d", { willReadFrequently: true });
             ctx.drawImage(img, 0, 0);
 
-            backgroundColorHex = getPixelColorHex( ctx, 0, 0 );
+            backgroundColorHex = getPixelColorHex( ctx, 0, img.height / 2 );
 
-            // find the top-left dot
-            let originX = 0;
-            let originY = 0;
-            while( getPixelColorHex(ctx, originX, originY) === backgroundColorHex ) {
-                originX += 3;
-                originY += 3;
+            // find middle dot of the map
+            let middleX = img.width / 2;
+            let middleY = img.height / 2;
+            let middleDotFound = false;
+            do {
+                if ( getPixelColorHex(ctx, middleX, middleY) !== backgroundColorHex ) {
+                    middleDotFound = true;
+                }
+                else {
+                    middleY -= 3;
+                }
+            } while ( !middleDotFound );
 
-                if ( originX >= canvas.width || originY >= canvas.height ) throwError( "Couldn't find any dots" );
-            }
+            // go left to count half the columns, calculate the crop width
+            const leftHalf = countDots( middleX, middleY, true, ctx );
+            const columnCount = ((leftHalf.dotCount - 1) * 2) + 1;
+            if ( columnCount !== 7 ) throwError( "There must be 7 dot columns" );
+            const cropX = leftHalf.lastIndex;
+            const cropWidth = (middleX - cropX) * 2;
 
-            // go right to count the columns
-            const columnCount = countDots( originX, originY, canvas.width, true, ctx );
-            if ( columnCount <= 3 ) throwError( "There must be more than 3 dot columns" );
-            document.getElementById("columnCount").textContent = `${columnCount}`;
+            // go up to count some of the rows
+            const rowCount = 8;
+            const topPortion = countDots( middleY, middleX, false, ctx );
+            const portionHeight = topPortion.firstIndex - topPortion.lastIndex;
+            const cellHeight = portionHeight / (topPortion.dotCount - 1);
+            const cropY = topPortion.lastIndex;
+            const cropHeight = cellHeight * rowCount;
 
-            // go down to count the rows
-            const rowCount = countDots( originY, originX, canvas.height, false, ctx );
-            if ( rowCount <= 3 ) throwError( "There must be more than 3 dot rows" );
-            document.getElementById("rowCount").textContent = `${rowCount}`;
+            // crop out just the board
+            const croppedCanvas = document.createElement("canvas");
+            croppedCanvas.width = cropWidth;
+            croppedCanvas.height = cropHeight;
+            const croppedCtx = croppedCanvas.getContext("2d", { willReadFrequently: true });
+            croppedCtx.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+            const cellWidth = cropWidth / columnCount;
+
+            // document.body.appendChild( croppedCanvas );
 
             // divide the screenshot into a grid and capture each dot's color to create all the dot maps
-            const cellWidth = canvas.width / columnCount;
-            const cellHeight = canvas.height / rowCount;
-
             const dotMap = [];
             for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
                 for (let columnIndex = 0; columnIndex < columnCount; columnIndex++) {
                     const x = Math.floor( (cellWidth * columnIndex) + (cellWidth / 2) );
                     const y = Math.floor( (cellHeight * rowIndex) + (cellHeight / 2) );
 
-                    if ( getPixelColorHex(ctx, x, y) === backgroundColorHex ) throwError( `Expected to find a dot at (x=${x},y=${y})` );
-                    const colorHex = getPixelColorHex(ctx, x, y);
+                    if ( getPixelColorHex(croppedCtx, x, y) === backgroundColorHex ) throwError( `Expected to find a dot at (x=${x},y=${y})` );
+                    const colorHex = getPixelColorHex(croppedCtx, x, y);
                     dotMap[rowIndex] = dotMap[rowIndex] || [];
                     dotMap[rowIndex].push(colorHex);
                 }
@@ -362,20 +402,44 @@
             );
         }
 
-        function countDots( startIndex, oppositeIndex, dimensionMax, moveHorizontally, ctx ) {
+        function countDots( startIndex, oppositeIndex, moveHorizontally, ctx ) {
             let dotCount = 0;
             let dotFound = false;
-            for (let i = startIndex; i < dimensionMax; i += 2) {
+            let i = startIndex;
+            let firstIndex = startIndex;
+            let distanceBetweenDots = 0;
+            let distancesBetweenDots = [];
+            while ( i > 0 && (distancesBetweenDots.length === 0 || distanceBetweenDots - getAverage( distancesBetweenDots ) <= 3 ) ) {
                 if ( getPixelColorHex( ctx, moveHorizontally ? i : oppositeIndex, moveHorizontally ? oppositeIndex : i ) === backgroundColorHex ) {
                     dotFound = false;
+                    distanceBetweenDots++;
                 }
                 else if ( !dotFound ) {
                     dotFound = true;
                     dotCount++;
+                    if ( distanceBetweenDots > 0 ) {
+                        distancesBetweenDots.push( distanceBetweenDots );
+                        distanceBetweenDots = 0;
+
+                        if ( firstIndex === startIndex ) {
+                            firstIndex = i;
+                        }
+                    }
                 }
+
+                i--;
             }
 
-            return dotCount;
+            return {
+                dotCount,
+                firstIndex,
+                lastIndex: i
+            };
+        }
+
+        function getAverage( numberArray ) {
+            const sum = numberArray.reduce((acc, curr) => acc + curr, 0);
+            return sum / numberArray.length;
         }
 
         function throwError( message ) {
@@ -386,12 +450,6 @@
 </head>
 <body>
     <input type="file" id="screenshotFile">
-    <hr/>
-    Cols: <strong id="columnCount">0</strong>
-    <br/>
-    Rows: <strong id="rowCount">0</strong>
-    <br/>
     <em><strong id="message"></strong></em>
-    <hr/>
 </body>
 </html>
