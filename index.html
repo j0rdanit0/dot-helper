@@ -6,6 +6,9 @@
             background-color: darkslategrey;
             color: lightgrey;
         }
+        input[type=number] {
+            width: 50px;
+        }
         .circle {
             width: 30px;
             height: 30px;
@@ -33,13 +36,13 @@
         }
     </style>
     <script type="text/javascript">
-        const PREFER_LOWER_MOVES = true;
         const BACKGROUND_COLOR = '#f8bd5d'
         const BLANK_DOT_COLOR = '#00000000';
 
         let backgroundColorHex;
 
         window.onload = function(e) {
+            loadInputs();
             const fileInput = document.getElementById("screenshotFile");
 
             fileInput.addEventListener('change', (event) => {
@@ -54,61 +57,9 @@
                         img.onload = () => {
                             const dotMap = generateDotMap( img );
 
-                            const potentialMoves = [];
-                            for (let rowIndex = 0; rowIndex < dotMap.length; rowIndex++) {
-                                const row = dotMap[rowIndex];
-                                for (let colIndex = 0; colIndex < row.length; colIndex++) {
-                                    const startCoordinates = {
-                                        x: colIndex,
-                                        y: rowIndex
-                                    };
+                            const potentialMoves = determinePotentialMoves( dotMap );
 
-                                    [
-                                        swapDots( dotMap, startCoordinates, true ),
-                                        swapDots( dotMap, startCoordinates, false )
-                                    ].filter( potentialMove => potentialMove.score > 0 ).forEach( potentialMove => {
-                                        potentialMoves.push( potentialMove );
-                                    });
-                                }
-                            }
-
-                            potentialMoves.sort( (a, b) => {
-                                let score = b.score - a.score;
-                                if ( PREFER_LOWER_MOVES && score === 0 ) {
-                                    const aAverageY = a.matchCoordinates.reduce( (sum, coordinates) => sum + coordinates.y, 0 ) / a.matchCoordinates.length;
-                                    const bAverageY = b.matchCoordinates.reduce( (sum, coordinates) => sum + coordinates.y, 0 ) / b.matchCoordinates.length;
-
-                                    score = bAverageY - aAverageY;
-                                }
-
-                                return score;
-                            } );
-
-                            potentialMoves.forEach( potentialMove => {
-                                const table = document.createElement('table');
-                                const tr = table.insertRow();
-                                const tdBefore = tr.insertCell();
-                                const mapTableBefore = drawMap( dotMap, [potentialMove.coordinates1, potentialMove.coordinates2], null, potentialMove.moveHorizontally );
-                                tdBefore.appendChild( mapTableBefore );
-
-                                potentialMove.dotMaps.forEach( dotMapWithHighlights => {
-                                    const tdArrow = tr.insertCell();
-                                    tdArrow.style.verticalAlign = 'middle';
-                                    tdArrow.style.padding = '20px';
-                                    const arrow = document.createElement( 'h1' );
-                                    arrow.innerHTML = '&rarr;';
-                                    tdArrow.appendChild( arrow );
-                                    const tdAfter = tr.insertCell();
-                                    const mapTableAfter = drawMap( dotMapWithHighlights.dotMap, null, dotMapWithHighlights.matchCoordinates );
-                                    tdAfter.appendChild( mapTableAfter );
-                                });
-
-                                document.body.appendChild( document.createElement('hr') );
-                                document.body.appendChild( document.createTextNode( `Score: ${potentialMove.score}` ) )
-                                document.body.appendChild( table );
-
-                                // console.log( `${potentialMove.score}: (${potentialMove.coordinates1.x},${potentialMove.coordinates1.y})<->(${potentialMove.coordinates2.x},${potentialMove.coordinates2.y})` )
-                            } );
+                            displayPotentialMoves( potentialMoves, dotMap );
                         }
 
                         img.src = e.target.result;
@@ -118,6 +69,90 @@
                 }
             });
         };
+
+        function determinePotentialMoves( dotMap ) {
+            const potentialMoves = [];
+            for (let rowIndex = 0; rowIndex < dotMap.length; rowIndex++) {
+                const row = dotMap[rowIndex];
+                for (let colIndex = 0; colIndex < row.length; colIndex++) {
+                    const startCoordinates = {
+                        x: colIndex,
+                        y: rowIndex
+                    };
+
+                    [
+                        swapDots( dotMap, startCoordinates, true ),
+                        swapDots( dotMap, startCoordinates, false )
+                    ].filter( potentialMove => potentialMove.score > 0 ).forEach( potentialMove => {
+                        potentialMoves.push( potentialMove );
+                    });
+                }
+            }
+
+            return potentialMoves;
+        }
+
+        function displayPotentialMoves( potentialMoves, dotMap ) {
+            const dotsEliminatedWeight = document.getElementById( 'dotsEliminatedWeight' ).value;
+            const dotsMovedWeight = document.getElementById( 'dotsMovedWeight' ).value;
+            const averageYWeight = document.getElementById( 'averageYWeight' ).value;
+
+            const movesDisplayed = document.getElementById( 'movesDisplayed' ).value;
+            const totalMovesToDisplay = ( movesDisplayed === 'ALL' ? potentialMoves.length : Math.min( movesDisplayed, potentialMoves.length ) );
+            potentialMoves.sort( (a, b) => b.score - a.score );
+            for (let i = 0; i < totalMovesToDisplay; i++) {
+                const potentialMove = potentialMoves[i];
+                const table = document.createElement('table');
+                const tr = table.insertRow();
+                const tdBefore = tr.insertCell();
+                const mapTableBefore = drawMap( dotMap, [potentialMove.coordinates1, potentialMove.coordinates2], null, potentialMove.moveHorizontally );
+                tdBefore.appendChild( mapTableBefore );
+
+                potentialMove.dotMaps.forEach( dotMapWithHighlights => {
+                    const tdArrow = tr.insertCell();
+                    tdArrow.style.verticalAlign = 'middle';
+                    tdArrow.style.padding = '20px';
+                    const arrow = document.createElement( 'h1' );
+                    arrow.innerHTML = '&rarr;';
+                    tdArrow.appendChild( arrow );
+                    const tdAfter = tr.insertCell();
+                    const mapTableAfter = drawMap( dotMapWithHighlights.dotMap, null, dotMapWithHighlights.matchCoordinates );
+                    tdAfter.appendChild( mapTableAfter );
+                });
+
+                const scoreCard = document.createElement('table');
+                const dotsEliminatedTr = scoreCard.insertRow();
+                const dotsEliminatedTd = dotsEliminatedTr.insertCell();
+                dotsEliminatedTd.textContent = `Dots eliminated: (x${dotsEliminatedWeight})`;
+                const dotsEliminatedValueTd = dotsEliminatedTr.insertCell();
+                dotsEliminatedValueTd.textContent = potentialMove.dotsEliminated;
+                const dotsMovedTr = scoreCard.insertRow();
+                const dotsMovedTd = dotsMovedTr.insertCell();
+                dotsMovedTd.textContent = `Dots moved: (x${dotsMovedWeight})`;
+                const dotsMovedValueTd = dotsMovedTr.insertCell();
+                dotsMovedValueTd.textContent = potentialMove.dotsMoved;
+                const averageYTr = scoreCard.insertRow();
+                const averageYTd = averageYTr.insertCell();
+                averageYTd.textContent = `Average y-coordinate of eliminated dots: (x${averageYWeight})`;
+                const averageYValueTd = averageYTr.insertCell();
+                averageYValueTd.textContent = `${parseFloat( potentialMove.averageY.toFixed(2) )}`;
+                const totalTr = scoreCard.insertRow();
+                const totalTd = totalTr.insertCell();
+                totalTd.textContent = `Total Score:`;
+                const totalValueTd = totalTr.insertCell();
+                totalValueTd.textContent = `${parseFloat( potentialMove.score.toFixed(2) )}`;
+
+                const fieldset = document.createElement('fieldset');
+                const legend = document.createElement('legend');
+                legend.textContent = `Move #${i + 1}`;
+                fieldset.appendChild( legend );
+                fieldset.appendChild( scoreCard );
+                fieldset.appendChild( table );
+                document.body.appendChild( fieldset );
+
+                // console.log( `${potentialMove.score}: (${potentialMove.coordinates1.x},${potentialMove.coordinates1.y})<->(${potentialMove.coordinates2.x},${potentialMove.coordinates2.y})` )
+            }
+        }
 
         function drawMap( dotMap, selectedCoordinates, highlightedCoordinates, horizontalSelection ) {
             const table = document.createElement('table');
@@ -164,8 +199,10 @@
                 coordinates2: null,
                 score: 0,
                 moveHorizontally: moveHorizontally,
-                matchCoordinates: [],
-                dotMaps: []
+                dotMaps: [],
+                averageY: 0,
+                dotsEliminated: 0,
+                dotsMoved: 0
             };
 
             if ( (moveHorizontally ? startCoordinates.x + 1 < dotMap[startCoordinates.y].length : startCoordinates.y + 1 < dotMap.length) ) {
@@ -184,10 +221,6 @@
                     let potentialDotMap = dotMap.map( row => row.slice() );
                     potentialDotMap[startCoordinates.y][startCoordinates.x] = swapColor;
                     potentialDotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
-                    // potentialMove.dotMaps.push( {
-                    //     dotMap: potentialDotMap.map( row => row.slice() ),
-                    //     matchCoordinates: []
-                    // } );
 
                     // track coordinates of every dot that gets shifted by swaps
                     const shiftedCoordinates = [ startCoordinates, swapCoordinates ];
@@ -201,10 +234,13 @@
                             checkForMatch( potentialDotMap, coordinates, true, matchCoordinates );
                         });
 
+                        potentialMove.dotsMoved += shiftedCoordinates.length;
+                        potentialMove.score += (potentialMove.dotsMoved * parseFloat( document.getElementById( 'dotsMovedWeight' ).value ));
+
                         shiftedCoordinates.length = 0;
 
                         if ( matchCoordinates.size > 0 ) {
-                            potentialMove.score += matchCoordinates.size;
+                            potentialMove.score += (matchCoordinates.size * parseFloat( document.getElementById( 'dotsEliminatedWeight' ).value ));
                             const mapWithHighlights = {
                                 dotMap: [],
                                 matchCoordinates: []
@@ -219,6 +255,8 @@
 
                                 normalizedCoordinates.push( coord );
                                 mapWithHighlights.matchCoordinates.push( coord );
+
+                                potentialMove.dotsEliminated++;
                             });
 
                             mapWithHighlights.dotMap = potentialDotMap.map( row => row.slice() );
@@ -266,6 +304,13 @@
                         dotMap: potentialDotMap.map( row => row.slice() ),
                         matchCoordinates: []
                     } );
+
+                    const yCoordinates = [];
+                    potentialMove.dotMaps.forEach( dotMapWithHighlights => {
+                        dotMapWithHighlights.matchCoordinates.map( coordinates => coordinates.y ).forEach( y => yCoordinates.push( y ) );
+                    });
+                    potentialMove.averageY = yCoordinates.reduce( (sum, yCoord) => sum + yCoord, 0 ) / yCoordinates.length;
+                    potentialMove.score += (potentialMove.averageY * parseFloat( document.getElementById( 'averageYWeight' ).value ));
                 }
             }
 
@@ -450,10 +495,69 @@
             document.getElementById("message").textContent = `Screenshot is invalid: ${message}`;
             throw new Error( message );
         }
+
+        function saveInputs() {
+            const inputs = document.querySelectorAll('input, select');
+
+            inputs.forEach(input => {
+                localStorage.setItem(input.id, input.value);
+            });
+        }
+
+        function loadInputs() {
+            const inputs = document.querySelectorAll('input, select');
+
+            inputs.forEach(input => {
+                if ( input.type !== 'file' ) {
+                    const storedValue = localStorage.getItem(input.id);
+                    if (storedValue) {
+                        input.value = storedValue;
+                    }
+
+                    input.addEventListener('change', () => saveInputs());
+                }
+            });
+        }
     </script>
 </head>
 <body>
-    <input type="file" id="screenshotFile">
-    <em><strong id="message"></strong></em>
+<form>
+    <fieldset>
+        <legend>Score weights</legend>
+        <p>
+            <label for="dotsEliminatedWeight">Dots eliminated</label> (x<input type="number" id="dotsEliminatedWeight" value="100">)
+        </p>
+        <p>
+            <label for="dotsMovedWeight">Dots moved</label> (x<input type="number" id="dotsMovedWeight" value="1">)
+        </p>
+        <p>
+            <label for="averageYWeight">Average y-coordinate of eliminated dots</label> (x<input type="number" id="averageYWeight" value="1">)
+        </p>
+    </fieldset>
+    <fieldset>
+        <legend>Settings</legend>
+        <p>
+            <label for="movesDisplayed">Moves displayed</label>
+            <select id="movesDisplayed">
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
+                <option value="ALL">ALL</option>
+            </select>
+        </p>
+    </fieldset>
+    <fieldset>
+        <legend>Upload screenshot</legend>
+        <p>
+            <input type="file" id="screenshotFile">
+        </p>
+        <em><strong id="message"></strong></em>
+    </fieldset>
+</form>
 </body>
 </html>
