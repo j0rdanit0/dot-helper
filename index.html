@@ -38,8 +38,12 @@
     <script type="text/javascript">
         const BACKGROUND_COLOR = '#f8bd5d'
         const BLANK_DOT_COLOR = '#00000000';
-
-        let backgroundColorHex;
+        const RED_DOT_COLOR = '#F44336';
+        const GREEN_DOT_COLOR = '#43F436';
+        const BLUE_DOT_COLOR = '#4336F4';
+        const PINK_DOT_COLOR = '#F433F4';
+        const YELLOW_DOT_COLOR = '#F4F436';
+        const DOT_COLORS = [RED_DOT_COLOR, GREEN_DOT_COLOR, BLUE_DOT_COLOR, PINK_DOT_COLOR, YELLOW_DOT_COLOR];
 
         window.onload = function(e) {
             loadInputs();
@@ -366,34 +370,30 @@
             const ctx = canvas.getContext("2d", { willReadFrequently: true });
             ctx.drawImage(img, 0, 0);
 
-            backgroundColorHex = getPixelColorHex( ctx, 0, img.height / 2 );
-
-            // find middle dot of the map
-            let middleX = img.width / 2;
-            let middleY = img.height / 2;
-            let middleDotFound = false;
-            do {
-                if ( getPixelColorHex(ctx, middleX, middleY) !== backgroundColorHex ) {
-                    middleDotFound = true;
-                }
-                else {
-                    middleY -= 3;
-                }
-            } while ( !middleDotFound );
+            // find the bottom-middle dot
+            let x = img.width / 2;
+            let y = img.height;
+            const stepSize = 3;
+            let bottomRowFound = false;
+            while( !bottomRowFound && y >= stepSize ) {
+                bottomRowFound = isDotColor(ctx, x, y);
+                y -= stepSize;
+            }
 
             // go left to count half the columns, calculate the crop width
-            const leftHalf = countDots( middleX, middleY, true, ctx );
+            const leftHalf = countDots( x, y, true, ctx );
             const columnCount = ((leftHalf.dotCount - 1) * 2) + 1;
             if ( columnCount !== 7 ) throwError( "There must be 7 dot columns" );
             const cropX = leftHalf.lastIndex;
-            const cropWidth = (middleX - cropX) * 2;
+            const cropWidth = (x - cropX) * 2;
 
-            // go up to count some of the rows
+            // go up to count the rows
             const rowCount = 8;
-            const topPortion = countDots( middleY, middleX, false, ctx );
-            const portionHeight = topPortion.firstIndex - topPortion.lastIndex;
-            const cellHeight = portionHeight / (topPortion.dotCount - 1);
-            const cropY = topPortion.lastIndex;
+            const verticalPortion = countDots( y, x, false, ctx );
+            if( verticalPortion.dotCount !== 8 ) throwError( "There must be 8 dot rows" );
+            const portionHeight = verticalPortion.firstIndex - verticalPortion.lastIndex;
+            const cellHeight = portionHeight / (verticalPortion.dotCount - 1);
+            const cropY = verticalPortion.lastIndex;
             const cropHeight = cellHeight * rowCount;
 
             // crop out just the board
@@ -413,7 +413,7 @@
                     const x = Math.floor( (cellWidth * columnIndex) + (cellWidth / 2) );
                     const y = Math.floor( (cellHeight * rowIndex) + (cellHeight / 2) );
 
-                    if ( getPixelColorHex(croppedCtx, x, y) === backgroundColorHex ) throwError( `Expected to find a dot at (x=${x},y=${y})` );
+                    if ( isBackgroundColor(croppedCtx, x, y) ) throwError( `Expected to find a dot at (x=${x},y=${y})` );
                     const colorHex = getPixelColorHex(croppedCtx, x, y);
                     dotMap[rowIndex] = dotMap[rowIndex] || [];
                     dotMap[rowIndex].push(colorHex);
@@ -427,6 +427,21 @@
             // }
 
             return dotMap;
+        }
+
+        function isBackgroundColor(ctx, x, y) {
+            return areColorsSimilar( getPixelColorHex(ctx, x, y), BACKGROUND_COLOR );
+        }
+
+        function isDotColor(ctx, x, y) {
+            let isDotColor = false;
+            const pixelColorHex = getPixelColorHex(ctx, x, y);
+            for ( let dotColor of DOT_COLORS) {
+                isDotColor = areColorsSimilar( pixelColorHex, dotColor );
+                if ( isDotColor ) break;
+            }
+
+            return isDotColor;
         }
 
         function getPixelColorHex(ctx, x, y) {
@@ -451,6 +466,35 @@
             );
         }
 
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+
+        function colorDistance(color1, color2) {
+            const rDiff = color1.r - color2.r;
+            const gDiff = color1.g - color2.g;
+            const bDiff = color1.b - color2.b;
+
+            return Math.sqrt(rDiff * rDiff + gDiff * gDiff + bDiff * bDiff);
+        }
+
+        function areColorsSimilar(hex1, hex2, threshold = 10) {
+            const color1 = hexToRgb(hex1);
+            const color2 = hexToRgb(hex2);
+
+            if (!color1 || !color2) {
+                return false; // Invalid hex codes
+            }
+
+            const distance = colorDistance(color1, color2);
+            return distance < threshold;
+        }
+
         function countDots( startIndex, oppositeIndex, moveHorizontally, ctx ) {
             let dotCount = 0;
             let dotFound = false;
@@ -459,7 +503,7 @@
             let distanceBetweenDots = 0;
             let distancesBetweenDots = [];
             while ( i > 0 && (distancesBetweenDots.length === 0 || distanceBetweenDots - getAverage( distancesBetweenDots ) <= 3 ) ) {
-                if ( getPixelColorHex( ctx, moveHorizontally ? i : oppositeIndex, moveHorizontally ? oppositeIndex : i ) === backgroundColorHex ) {
+                if ( isBackgroundColor( ctx, moveHorizontally ? i : oppositeIndex, moveHorizontally ? oppositeIndex : i ) ) {
                     dotFound = false;
                     distanceBetweenDots++;
                 }
