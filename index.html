@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Dot Helper</title>
+
+    <!-- Tailwind CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet"/>
+
+    <!-- Alpine Plugins -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/persist@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- Alpine Core -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <style>
+        @tailwind base;
+        @tailwind components;
+        @tailwind utilities;
+
+        input[type=number] {
+            width: 100px;
+        }
+
+        .dot {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            margin: 5px auto;
+            box-shadow: inset -1px 0 1px #888888, inset 1px 1px 2px #ffffff88;
+        }
+
+        .highlighted {
+            background-color: rgba(255, 255, 255, 0.75);
+        }
+
+        .selected {
+            border: 3px solid red;
+        }
+
+        .selected-north {
+            border-bottom: none;
+        }
+
+        .selected-east {
+            border-left: none;
+        }
+
+        .selected-south {
+            border-top: none;
+        }
+
+        .selected-west {
+            border-right: none;
+        }
+    </style>
+
+<script type="text/javascript">
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('match3Helper', function () {
+            const defaults = {
+                dotsEliminatedWeight: 100,
+                dotsMovedWeight: 1,
+                averageYWeight: 1,
+                remainingDotsWeight: 15,
+                movesDisplayed: '3',
+            }
+
+            const BLANK_DOT_COLOR = '#00000000';
+            let BACKGROUND_COLOR;
+
+            return {
+                dotsEliminatedWeight: this.$persist(defaults.dotsEliminatedWeight),
+                dotsMovedWeight: this.$persist(defaults.dotsMovedWeight),
+                averageYWeight: this.$persist(defaults.averageYWeight),
+                remainingDotsWeight: this.$persist(defaults.remainingDotsWeight),
+                movesDisplayed: this.$persist(defaults.movesDisplayed),
+                debugMode: this.$persist(false),
+                uploadedImage: null,
+                message: '',
+
+                resetDotsEliminatedWeight() {
+                    this.dotsEliminatedWeight = defaults.dotsEliminatedWeight;
+                },
+
+                resetDotsMovedWeight() {
+                    this.dotsMovedWeight = defaults.dotsMovedWeight;
+                },
+
+                resetAverageYWeight() {
+                    this.averageYWeight = defaults.averageYWeight;
+                },
+
+                resetRemainingDotsWeight() {
+                    this.remainingDotsWeight = defaults.remainingDotsWeight;
+                },
+
+                toggleDebugMode() {
+                    this.debugMode = !this.debugMode;
+                },
+
+                handleFileUpload(event) {
+                    this.message = '';
+                    document.getElementById('movesContainer').innerHTML = '';
+
+                    const file = event.target.files[0];
+                    if (file && file.type.startsWith('image/')) {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            const img = new Image();
+
+                            img.onload = () => {
+                                const dotMap = this.generateDotMap(img);
+
+                                const potentialMoves = this.determinePotentialMoves(dotMap);
+
+                                this.displayPotentialMoves(potentialMoves, dotMap);
+                            }
+
+                            img.src = e.target.result;
+
+                            this.uploadedImage = e.target.result;
+                        };
+                        reader.readAsDataURL(file);
+                    } else {
+                        alert('Please upload a valid image file.');
+                    }
+                },
+
+                determinePotentialMoves(dotMap) {
+                    const potentialMoves = [];
+                    for (let rowIndex = 0; rowIndex < dotMap.length; rowIndex++) {
+                        const row = dotMap[rowIndex];
+                        for (let colIndex = 0; colIndex < row.length; colIndex++) {
+                            const startCoordinates = {
+                                x: colIndex,
+                                y: rowIndex
+                            };
+
+                            [
+                                this.swapDots(dotMap, startCoordinates, true),
+                                this.swapDots(dotMap, startCoordinates, false)
+                            ].filter(potentialMove => potentialMove.score > 0).forEach(potentialMove => {
+                                potentialMoves.push(potentialMove);
+                            });
+                        }
+                    }
+
+                    return potentialMoves;
+                },
+
+                displayPotentialMoves(potentialMoves, dotMap) {
+                    const totalMovesToDisplay = (this.movesDisplayed === 'ALL' ? potentialMoves.length : Math.min(this.movesDisplayed, potentialMoves.length));
+                    potentialMoves.sort((a, b) => b.score - a.score);
+
+                    const movesContainer = document.getElementById('movesContainer');
+                    for (let i = 0; i < totalMovesToDisplay; i++) {
+                        const potentialMove = potentialMoves[i];
+                        const table = document.createElement('table');
+                        table.style.marginTop = '10px';
+                        table.style.marginBottom = '10px';
+                        const tr = table.insertRow();
+                        const tdBefore = tr.insertCell();
+                        const mapTableBefore = this.drawMap(dotMap, [potentialMove.coordinates1, potentialMove.coordinates2], null, potentialMove.moveHorizontally);
+                        tdBefore.appendChild(mapTableBefore);
+
+                        potentialMove.dotMaps.forEach(dotMapWithHighlights => {
+                            const tdArrow = tr.insertCell();
+                            tdArrow.style.verticalAlign = 'middle';
+                            tdArrow.style.padding = '20px';
+                            const arrow = document.createElement('h1');
+                            arrow.innerHTML = '&rarr;';
+                            tdArrow.appendChild(arrow);
+                            const tdAfter = tr.insertCell();
+                            const mapTableAfter = this.drawMap(dotMapWithHighlights.dotMap, null, dotMapWithHighlights.matchCoordinates);
+                            tdAfter.appendChild(mapTableAfter);
+                        });
+
+                        const hr = document.createElement('hr');
+                        movesContainer.appendChild(hr);
+                        const title = document.createElement('h3');
+                        title.textContent = `#${i + 1} Move: ${potentialMove.dotsEliminated}`;
+                        movesContainer.appendChild(title);
+
+                        const moveContainer = document.createElement('div');
+                        moveContainer.style.overflowX = 'auto';
+                        if (this.debugMode) {
+                            const scoreCard = document.createElement('table');
+                            const dotsEliminatedTr = scoreCard.insertRow();
+                            const dotsEliminatedTd = dotsEliminatedTr.insertCell();
+                            dotsEliminatedTd.textContent = `Dots eliminated: (x${this.dotsEliminatedWeight})`;
+                            const dotsEliminatedValueTd = dotsEliminatedTr.insertCell();
+                            dotsEliminatedValueTd.textContent = potentialMove.dotsEliminated;
+                            const dotsMovedTr = scoreCard.insertRow();
+                            const dotsMovedTd = dotsMovedTr.insertCell();
+                            dotsMovedTd.textContent = `Dots moved: (x${this.dotsMovedWeight})`;
+                            const dotsMovedValueTd = dotsMovedTr.insertCell();
+                            dotsMovedValueTd.textContent = potentialMove.dotsMoved;
+                            const averageYTr = scoreCard.insertRow();
+                            const averageYTd = averageYTr.insertCell();
+                            averageYTd.textContent = `Average y-coordinate of eliminated dots: (x${this.averageYWeight})`;
+                            const averageYValueTd = averageYTr.insertCell();
+                            averageYValueTd.textContent = `${parseFloat(potentialMove.averageY.toFixed(2))}`;
+                            const remainingDotsTr = scoreCard.insertRow();
+                            const remainingDotsTd = remainingDotsTr.insertCell();
+                            remainingDotsTd.textContent = `Remaining dots set up for potential matches: (x${this.remainingDotsWeight})`;
+                            const remainingDotsValueTd = remainingDotsTr.insertCell();
+                            remainingDotsValueTd.textContent = `${potentialMove.dotMaps.reduce((sum, dotMapWithHighlights) => sum + dotMapWithHighlights.remainingDotsSetUpForPotentialMatches, 0)}`;
+                            const totalTr = scoreCard.insertRow();
+                            const totalTd = totalTr.insertCell();
+                            totalTd.textContent = `Total Score:`;
+                            const totalValueTd = totalTr.insertCell();
+                            totalValueTd.textContent = `${parseFloat(potentialMove.score.toFixed(2))}`;
+
+                            moveContainer.appendChild(scoreCard);
+                        }
+                        moveContainer.appendChild(table);
+                        movesContainer.appendChild(moveContainer);
+
+                        // console.log( `${potentialMove.score}: (${potentialMove.coordinates1.x},${potentialMove.coordinates1.y})<->(${potentialMove.coordinates2.x},${potentialMove.coordinates2.y})` )
+                    }
+                },
+
+                drawMap(dotMap, selectedCoordinates, highlightedCoordinates, horizontalSelection) {
+                    const table = document.createElement('table');
+                    table.rules = 'none';
+                    table.style.width = '250px';
+                    table.style.border = '1px solid black';
+                    table.style.backgroundColor = BACKGROUND_COLOR;
+
+                    for (let rowIndex = 0; rowIndex < dotMap.length; rowIndex++) {
+                        const tr = table.insertRow();
+                        for (let colIndex = 0; colIndex < dotMap[rowIndex].length; colIndex++) {
+                            const td = tr.insertCell();
+                            const dot = document.createElement('div');
+                            dot.classList.add('dot');
+                            dot.style.backgroundColor = dotMap[rowIndex][colIndex];
+
+                            if (selectedCoordinates && selectedCoordinates.length === 2 && selectedCoordinates[0].x === colIndex && selectedCoordinates[0].y === rowIndex) {
+                                td.classList.add('selected');
+                                td.classList.add(horizontalSelection ? 'selected-west' : 'selected-north');
+                            } else if (selectedCoordinates && selectedCoordinates.length === 2 && selectedCoordinates[1].x === colIndex && selectedCoordinates[1].y === rowIndex) {
+                                td.classList.add('selected');
+                                td.classList.add(horizontalSelection ? 'selected-east' : 'selected-south');
+                            }
+
+                            if (highlightedCoordinates && highlightedCoordinates.length) {
+                                highlightedCoordinates.forEach(coord => {
+                                    if (coord.x === colIndex && coord.y === rowIndex) {
+                                        td.classList.add('highlighted');
+                                    }
+                                });
+                            }
+
+                            td.appendChild(dot);
+                        }
+                    }
+
+                    return table;
+                },
+
+                swapDots(dotMap, startCoordinates, moveHorizontally) {
+                    const potentialMove = {
+                        coordinates1: startCoordinates,
+                        coordinates2: null,
+                        score: 0,
+                        moveHorizontally: moveHorizontally,
+                        dotMaps: [],
+                        averageY: 0,
+                        dotsEliminated: 0,
+                        dotsMoved: 0
+                    };
+
+                    if ((moveHorizontally ? startCoordinates.x + 1 < dotMap[startCoordinates.y].length : startCoordinates.y + 1 < dotMap.length)) {
+                        const currentColor = dotMap[startCoordinates.y][startCoordinates.x];
+
+                        const swapCoordinates = {
+                            x: (moveHorizontally ? startCoordinates.x + 1 : startCoordinates.x),
+                            y: (moveHorizontally ? startCoordinates.y : startCoordinates.y + 1)
+                        }
+                        potentialMove.coordinates2 = swapCoordinates;
+
+                        const swapColor = dotMap[swapCoordinates.y][swapCoordinates.x];
+
+                        if (currentColor !== swapColor) {
+                            // hypothetically make the swap
+                            let potentialDotMap = dotMap.map(row => row.slice());
+                            potentialDotMap[startCoordinates.y][startCoordinates.x] = swapColor;
+                            potentialDotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
+
+                            // track coordinates of every dot that gets shifted by swaps
+                            const shiftedCoordinates = [startCoordinates, swapCoordinates];
+
+                            while (shiftedCoordinates.length > 0) {
+                                // track coordinates of every dot in the match
+                                const matchCoordinates = new Set();
+
+                                shiftedCoordinates.forEach(coordinates => {
+                                    this.checkForMatch(potentialDotMap, coordinates, false, matchCoordinates);
+                                    this.checkForMatch(potentialDotMap, coordinates, true, matchCoordinates);
+                                });
+
+                                potentialMove.dotsMoved += shiftedCoordinates.length;
+                                potentialMove.score += potentialMove.dotsMoved * this.dotsMovedWeight;
+
+                                shiftedCoordinates.length = 0;
+
+                                if (matchCoordinates.size > 0) {
+                                    potentialMove.score += matchCoordinates.size * this.dotsEliminatedWeight;
+                                    const mapWithHighlights = {
+                                        dotMap: [],
+                                        matchCoordinates: [],
+                                        remainingDotsSetUpForPotentialMatches: 0
+                                    };
+                                    const normalizedBlankCoordinates = [];
+                                    matchCoordinates.forEach(coordinates => {
+                                        const parts = coordinates.split(',');
+                                        const coord = {
+                                            x: parseInt(parts[0]),
+                                            y: parseInt(parts[1])
+                                        };
+
+                                        normalizedBlankCoordinates.push(coord);
+                                        mapWithHighlights.matchCoordinates.push(coord);
+
+                                        potentialMove.dotsEliminated++;
+                                    });
+
+                                    mapWithHighlights.dotMap = potentialDotMap.map(row => row.slice());
+                                    potentialMove.dotMaps.push(mapWithHighlights);
+
+                                    // create blanks
+                                    normalizedBlankCoordinates.forEach(coordinates => {
+                                        potentialDotMap[coordinates.y][coordinates.x] = BLANK_DOT_COLOR;
+                                    });
+
+                                    // bubble up the blanks - start from the top of the blanks and make them bubble to the top
+                                    normalizedBlankCoordinates.sort((a, b) => a.y - b.y);
+                                    normalizedBlankCoordinates.forEach(coordinates => {
+                                        let x = coordinates.x;
+                                        let y = coordinates.y;
+
+                                        while (y > 0) {
+                                            const currentCoordinates = {
+                                                x: x,
+                                                y: y
+                                            };
+
+                                            const swapCoordinates = {
+                                                x: x,
+                                                y: y - 1
+                                            }
+
+                                            const currentColor = potentialDotMap[currentCoordinates.y][currentCoordinates.x];
+                                            const swapColor = potentialDotMap[swapCoordinates.y][swapCoordinates.x];
+
+                                            if (currentColor === BLANK_DOT_COLOR && swapColor !== BLANK_DOT_COLOR) {
+                                                potentialDotMap[currentCoordinates.y][currentCoordinates.x] = swapColor;
+                                                potentialDotMap[swapCoordinates.y][swapCoordinates.x] = currentColor;
+
+                                                shiftedCoordinates.push(currentCoordinates);
+                                            }
+
+                                            y--;
+                                        }
+                                    });
+                                }
+                            }
+
+                            potentialMove.dotMaps.push({
+                                dotMap: potentialDotMap.map(row => row.slice()),
+                                matchCoordinates: [],
+                                remainingDotsSetUpForPotentialMatches: 0
+                            });
+
+                            const yCoordinates = [];
+                            let remainingDotsDivisor = 1;
+                            for (let i = potentialMove.dotMaps.length - 1; i >= 0; i--) { // iterate backwards so that remainingDotsSetUpForPotentialMatches is most potent only for the final result frame
+                                const dotMapWithHighlights = potentialMove.dotMaps[i];
+                                dotMapWithHighlights.matchCoordinates.map(coordinates => coordinates.y).forEach(y => yCoordinates.push(y));
+
+                                for (let y = 0; y < dotMapWithHighlights.dotMap.length; y++) {
+                                    for (let x = 0; x < dotMapWithHighlights.dotMap[y].length; x++) {
+                                        if (dotMapWithHighlights.dotMap[y][x] === BLANK_DOT_COLOR) {
+                                            dotMapWithHighlights.remainingDotsSetUpForPotentialMatches += this.checkForFutureMatchPotential(dotMapWithHighlights.dotMap, {
+                                                x,
+                                                y
+                                            }, true);
+                                            dotMapWithHighlights.remainingDotsSetUpForPotentialMatches += this.checkForFutureMatchPotential(dotMapWithHighlights.dotMap, {
+                                                x,
+                                                y
+                                            }, false);
+                                            potentialMove.score += (dotMapWithHighlights.remainingDotsSetUpForPotentialMatches * (this.remainingDotsWeight / remainingDotsDivisor));
+                                        }
+                                    }
+                                }
+
+                                remainingDotsDivisor++;
+                            }
+                            potentialMove.averageY = yCoordinates.reduce((sum, yCoord) => sum + yCoord, 0) / yCoordinates.length;
+                            potentialMove.score += potentialMove.averageY * this.averageYWeight;
+                        }
+                    }
+
+                    return potentialMove;
+                },
+
+                checkForMatch(dotMap, dotCoordinates, checkHorizontally, finalMatchCoordinates) {
+                    const matchCoordinates = new Set();
+
+                    let x = dotCoordinates.x;
+                    let y = dotCoordinates.y;
+
+                    const colorHex = dotMap[y][x];
+                    if (colorHex !== BLANK_DOT_COLOR) {
+                        // check backwards from the dot
+                        matchCoordinates.add(`${x},${y}`);
+                        while ((checkHorizontally ? x : y) - 1 >= 0) {
+                            checkHorizontally ? x-- : y--;
+                            if (dotMap[y][x] !== colorHex) break;
+
+                            matchCoordinates.add(`${x},${y}`);
+                        }
+
+                        x = dotCoordinates.x;
+                        y = dotCoordinates.y;
+
+                        // check forwards from the dot
+                        matchCoordinates.add(`${x},${y}`);
+                        while ((checkHorizontally ? x : y) + 1 < (checkHorizontally ? dotMap[y].length : dotMap.length)) {
+                            checkHorizontally ? x++ : y++;
+                            if (dotMap[y][x] !== colorHex) break;
+
+                            matchCoordinates.add(`${x},${y}`);
+                        }
+
+                        // the coordinates of any dots involved in a match should be added to the final match coordinates list
+                        if (matchCoordinates.size >= 3) {
+                            matchCoordinates.forEach(coordinates => finalMatchCoordinates.add(coordinates));
+                        }
+                    }
+                },
+
+                checkForFutureMatchPotential(dotMap, dotCoordinates, checkHorizontally) {
+                    let futureMatchPotentialDotCount = 0;
+
+                    let x = dotCoordinates.x;
+                    let y = dotCoordinates.y;
+
+                    // store neighboring colors to find potential matches
+                    const neighborColorHexes = new Set();
+                    if (checkHorizontally) {
+                        if (x - 1 >= 0) {
+                            const neighborColorHex = dotMap[y][x - 1];
+                            if (neighborColorHex !== BLANK_DOT_COLOR) {
+                                neighborColorHexes.add(neighborColorHex);
+                            }
+                        }
+                        if (x + 1 <= dotMap[y].length - 1) {
+                            const neighborColorHex = dotMap[y][x + 1];
+                            if (neighborColorHex !== BLANK_DOT_COLOR) {
+                                neighborColorHexes.add(neighborColorHex);
+                            }
+                        }
+                    } else {
+                        if (y - 1 >= 0) {
+                            const neighborColorHex = dotMap[y - 1][x];
+                            if (neighborColorHex !== BLANK_DOT_COLOR) {
+                                neighborColorHexes.add(neighborColorHex);
+                            }
+                        }
+                        if (y + 1 <= dotMap.length - 1) {
+                            const neighborColorHex = dotMap[y + 1][x];
+                            if (neighborColorHex !== BLANK_DOT_COLOR) {
+                                neighborColorHexes.add(neighborColorHex);
+                            }
+                        }
+                    }
+
+                    if (neighborColorHexes.size === 0) return futureMatchPotentialDotCount;
+
+                    for (const neighborColorHex of neighborColorHexes) {
+                        let matchCount = 0;
+
+                        // check backwards from the dot
+                        while ((checkHorizontally ? x : y) - 1 >= 0) {
+                            checkHorizontally ? x-- : y--;
+                            if (dotMap[y][x] !== neighborColorHex) break;
+
+                            matchCount++;
+                        }
+
+                        x = dotCoordinates.x;
+                        y = dotCoordinates.y;
+
+                        // check forwards from the dot
+                        while ((checkHorizontally ? x : y) + 1 < (checkHorizontally ? dotMap[y].length : dotMap.length)) {
+                            checkHorizontally ? x++ : y++;
+                            if (dotMap[y][x] !== neighborColorHex) break;
+
+                            matchCount++;
+                        }
+
+                        // the coordinates of any real dots involved in a potential match should be added to the final match coordinates list
+                        if (matchCount >= 2) {
+                            futureMatchPotentialDotCount += matchCount;
+                        }
+                    }
+
+                    return futureMatchPotentialDotCount;
+                },
+
+                generateDotMap(img) {
+                    const canvas = document.createElement("canvas");
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext("2d", {willReadFrequently: true});
+                    ctx.drawImage(img, 0, 0);
+
+                    BACKGROUND_COLOR = this.getPixelColorHex(ctx, 0, img.height / 2);
+
+                    // find the bottom of the dot map
+                    let firstBackgroundFound = false;
+                    let firstBackgroundComplete = false;
+                    let bottomY;
+                    let x = img.width / 2;
+                    const stepSize = 3;
+                    for (let y = img.height; y > stepSize; y -= stepSize) {
+                        if (!firstBackgroundFound) {
+                            if (this.isBackgroundColor(ctx, x, y)) {
+                                firstBackgroundFound = true;
+                            }
+                        } else if (!firstBackgroundComplete) {
+                            if (!this.isBackgroundColor(ctx, x, y)) {
+                                firstBackgroundComplete = true;
+                            }
+                        } else if (this.isBackgroundColor(ctx, x, y)) {
+                            bottomY = y;
+                            break;
+                        }
+                    }
+
+                    // go up to count the rows
+                    const rowCount = 8;
+                    const verticalPortion = this.countDots(bottomY, x, false, ctx);
+                    if (verticalPortion.dotCount !== 8) this.throwError("There must be 8 dot rows, found " + verticalPortion.dotCount);
+                    bottomY = verticalPortion.firstIndex;
+                    const topY = verticalPortion.lastIndex;
+                    const portionHeight = bottomY - topY;
+                    const cellHeight = portionHeight / verticalPortion.dotCount;
+                    const cropY = verticalPortion.lastIndex;
+                    const cropHeight = cellHeight * rowCount;
+
+                    // go left to count half the columns, calculate the crop width
+                    const leftHalf = this.countDots(x, bottomY - (cellHeight / 2), true, ctx);
+                    const columnCount = ((leftHalf.dotCount - 1) * 2) + 1;
+                    if (columnCount !== 7) this.throwError("There must be 7 dot columns");
+                    const cropX = leftHalf.lastIndex;
+                    const cropWidth = (x - cropX) * 2;
+
+                    // crop out just the board
+                    const croppedCanvas = document.createElement("canvas");
+                    croppedCanvas.width = cropWidth;
+                    croppedCanvas.height = cropHeight;
+                    const croppedCtx = croppedCanvas.getContext("2d", {willReadFrequently: true});
+                    croppedCtx.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+                    const cellWidth = cropWidth / columnCount;
+
+                    // document.getElementById( 'movesContainer' ).appendChild( croppedCanvas );
+
+                    // divide the screenshot into a grid and capture each dot's color to create all the dot maps
+                    const dotMap = [];
+                    for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+                        for (let columnIndex = 0; columnIndex < columnCount; columnIndex++) {
+                            const x = Math.floor((cellWidth * columnIndex) + (cellWidth / 2));
+                            const y = Math.floor((cellHeight * rowIndex) + (cellHeight / 2));
+
+                            if (this.isBackgroundColor(croppedCtx, x, y)) this.throwError(`Expected to find a dot at (x=${x},y=${y})`);
+                            const colorHex = this.getPixelColorHex(croppedCtx, x, y);
+                            dotMap[rowIndex] = dotMap[rowIndex] || [];
+                            dotMap[rowIndex].push(colorHex);
+                        }
+                    }
+
+                    // for debugging
+                    // console.log( `\nMap:` );
+                    // for (let rowIndex = 0; rowIndex < dotMap.length; rowIndex++) {
+                    //     console.log( dotMap[rowIndex] );
+                    // }
+
+                    return dotMap;
+                },
+
+                isBackgroundColor(ctx, x, y) {
+                    return this.getPixelColorHex(ctx, x, y) === BACKGROUND_COLOR;
+                },
+
+                getPixelColorHex(ctx, x, y) {
+                    const imageData = ctx.getImageData(x, y, 1, 1);
+                    const data = imageData.data;
+
+                    const r = data[0];
+                    const g = data[1];
+                    const b = data[2];
+
+                    const colorHex = `#${this.rgbToHex(r, g, b)}`;
+                    // for debugging
+                    // console.log( `Pixel at (x=${x},y=${y}) is ${colorHex}` );
+                    return colorHex;
+                },
+
+                rgbToHex(r, g, b) {
+                    return (
+                        ((1 << 24) + (r << 16) + (g << 8) + b)
+                            .toString(16)
+                            .slice(1)
+                    );
+                },
+
+                hexToRgb(hex) {
+                    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                    return result ? {
+                        r: parseInt(result[1], 16),
+                        g: parseInt(result[2], 16),
+                        b: parseInt(result[3], 16)
+                    } : null;
+                },
+
+                colorDistance(color1, color2) {
+                    const rDiff = color1.r - color2.r;
+                    const gDiff = color1.g - color2.g;
+                    const bDiff = color1.b - color2.b;
+
+                    return Math.sqrt(rDiff * rDiff + gDiff * gDiff + bDiff * bDiff);
+                },
+
+                areColorsSimilar(hex1, hex2, threshold = 10) {
+                    const color1 = this.hexToRgb(hex1);
+                    const color2 = this.hexToRgb(hex2);
+
+                    if (!color1 || !color2) {
+                        return false; // Invalid hex codes
+                    }
+
+                    const distance = this.colorDistance(color1, color2);
+                    return distance < threshold;
+                },
+
+                countDots(startIndex, oppositeIndex, moveHorizontally, ctx) {
+                    let dotCount = 0;
+                    let dotFound = false;
+                    let i = startIndex;
+                    let firstIndex = startIndex;
+                    let distanceBetweenDots = 0;
+                    let distancesBetweenDots = [];
+                    while (i > 0 && (distancesBetweenDots.length === 0 || distanceBetweenDots - this.getAverage(distancesBetweenDots) <= 3)) {
+                        if (this.isBackgroundColor(ctx, moveHorizontally ? i : oppositeIndex, moveHorizontally ? oppositeIndex : i)) {
+                            dotFound = false;
+                            distanceBetweenDots++;
+                        } else if (!dotFound) {
+                            dotFound = true;
+                            dotCount++;
+                            if (distanceBetweenDots > 0) {
+                                distancesBetweenDots.push(distanceBetweenDots);
+                                distanceBetweenDots = 0;
+
+                                if (firstIndex === startIndex) {
+                                    firstIndex = i;
+                                }
+                            }
+                        }
+
+                        i--;
+                    }
+
+                    return {
+                        dotCount,
+                        firstIndex,
+                        lastIndex: i
+                    };
+                },
+
+                getAverage(numberArray) {
+                    const sum = numberArray.reduce((acc, curr) => acc + curr, 0);
+                    return sum / numberArray.length;
+                },
+
+                throwError(message) {
+                    this.message = `Screenshot is invalid: ${message}`;
+                    throw new Error(message);
+                }
+            };
+        });
+    });
+</script>
+</head>
+<body>
+<div class="py-12">
+    <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg mb-8">
+            <div class="p-6 text-gray-900 dark:text-gray-100">
+                <div x-data="match3Helper">
+
+                    <h2 class="mb-2">Match 3 Helper</h2>
+
+                    <h3 class="mb-2">Multipliers</h3>
+                    <hr class="mb-2"/>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        <div class="mb-2 items-center">
+                            <label for="dotsEliminatedWeight">Number of dots eliminated</label>
+                            <div class="relative flex">
+                                <input
+                                        id="dotsEliminatedWeight"
+                                        name="dotsEliminatedWeight"
+                                        class="block mt-1"
+                                        type="number"
+                                        x-model="dotsEliminatedWeight"
+                                        required
+                                />
+                                <div class="inset-y-0 right-0 content-center px-4 cursor-pointer"
+                                     @click="resetDotsEliminatedWeight">Reset
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-2 items-center">
+                            <label for="dotsMovedWeight">Number of dots moved</label>
+                            <div class="relative flex">
+                                <input
+                                        id="dotsMovedWeight"
+                                        name="dotsMovedWeight"
+                                        class="block mt-1"
+                                        type="number"
+                                        x-model="dotsMovedWeight"
+                                        required
+                                />
+                                <div class="inset-y-0 right-0 content-center px-4 cursor-pointer"
+                                     @click="resetDotsMovedWeight">Reset
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-2 items-center">
+                            <label for="averageYWeight">Average y-coordinate of eliminated dots</label>
+                            <div class="relative flex">
+                                <input
+                                        id="averageYWeight"
+                                        name="averageYWeight"
+                                        class="block mt-1"
+                                        type="number"
+                                        x-model="averageYWeight"
+                                        required
+                                />
+                                <div class="inset-y-0 right-0 content-center px-4 cursor-pointer"
+                                     @click="resetAverageYWeight">Reset
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-2 items-center">
+                            <label for="remainingDotsWeight">Number of remaining dots set up for potential matches</label>
+                            <div class="relative flex">
+                                <input
+                                        id="remainingDotsWeight"
+                                        name="remainingDotsWeight"
+                                        class="block mt-1"
+                                        type="number"
+                                        x-model="remainingDotsWeight"
+                                        required
+                                />
+                                <div class="inset-y-0 right-0 content-center px-4 cursor-pointer"
+                                     @click="resetRemainingDotsWeight">Reset
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3 class="mb-2">Settings</h3>
+                    <hr class="mb-2"/>
+
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        <div class="mb-2 items-center">
+                            <button @click.prevent="toggleDebugMode" class="ml-1">
+                                <span class="mr-1">
+                                    <template x-if="debugMode">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M4 3H20C20.5523 3 21 3.44772 21 4V20C21 20.5523 20.5523 21 20 21H4C3.44772 21 3 20.5523 3 20V4C3 3.44772 3.44772 3 4 3ZM5 5V19H19V5H5ZM11.0026 16L6.75999 11.7574L8.17421 10.3431L11.0026 13.1716L16.6595 7.51472L18.0737 8.92893L11.0026 16Z"></path></svg>
+                                    </template>
+                                    <template x-if="!debugMode">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M4 3H20C20.5523 3 21 3.44772 21 4V20C21 20.5523 20.5523 21 20 21H4C3.44772 21 3 20.5523 3 20V4C3 3.44772 3.44772 3 4 3ZM5 5V19H19V5H5Z"></path></svg>
+                                    </template>
+                                </span>
+                                Debug Mode
+                            </button>
+                        </div>
+                        <div class="mb-2 items-center">
+                            <label for="movesDisplayed">Moves displayed</label>
+                            <select id="movesDisplayed" name="movesDisplayed" x-model="movesDisplayed" class="border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm inline-block mt-1">
+                                <option value="3">3</option>
+                                <option value="5">5</option>
+                                <option value="10">10</option>
+                                <option value="15">15</option>
+                                <option value="ALL">ALL</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <h3 class="mb-2">Upload Screenshot</h3>
+                    <hr class="mb-2"/>
+
+                    <template x-if="uploadedImage">
+                        <div class="mb-2">
+                            <p>Uploaded image:</p>
+                            <img :src="uploadedImage" alt="Uploaded Image" style="max-height: 200px;">
+                        </div>
+                    </template>
+
+                    <div class="mb-2 flex items-center">
+                        <input
+                                type="file"
+                                id="screenshotFile"
+                                name="screenshotFile"
+                                class="hidden"
+                                accept="image/*"
+                                x-on:change="handleFileUpload($event)"
+                                x-model="uploadedImage"
+                        >
+                        <label for="screenshotFile" class="bg-blue-500 dark:bg-blue-400 text-white dark:text-gray-900 px-4 py-2 rounded cursor-pointer">
+                            <span x-text="uploadedImage ? 'Upload next screenshot' : 'Upload screenshot'"></span>
+                        </label>
+                        <em><strong id="message" x-model="message"></strong></em>
+                    </div>
+
+                    <div id="movesContainer"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
